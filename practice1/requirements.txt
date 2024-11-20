@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+numpy
+pywavelets
+scipy
+Pillow
+matplotlib
+ffmpeg-python
+python-multipart
+
