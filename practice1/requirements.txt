@@ -7,4 +7,8 @@ Pillow
 matplotlib
 ffmpeg-python
 python-multipart
+flask
+pymediainfo
+opencv-python-headless
+
 
