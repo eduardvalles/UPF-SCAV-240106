@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from utils.image_processing import resize_image, runLengthEncoding
 from utils.video_processing import resize_video, modify_chroma_subsampling, get_video_info, process_bbb, generate_yuv_histogram_video
+from utils.transcoding import transcode_video, transcoder
 import numpy as np
 from typing import List
 import shutil
@@ -10,7 +11,6 @@ import io
 import os
 from pydantic import BaseModel
 from pymediainfo import MediaInfo
-
 
 app = FastAPI()
 
@@ -188,6 +188,70 @@ async def generate_yuv_histogram(file: UploadFile = File(...)):
     
     # Return the generated video file
     return FileResponse(output_video_path, media_type='video/mp4', filename=os.path.basename(output_video_path))
+
+
+@app.post("/transcode")
+async def transcode_endpoint(
+    file: UploadFile = File(...),
+    format: str = Form(...)
+):
+    """
+    Endpoint per transcodificar un vídeo a formats especificats.
+    """
+    valid_formats = ['vp8', 'vp9', 'h265', 'av1']
+
+    if format not in valid_formats:
+        raise HTTPException(status_code=400, detail="Format no suportat")
+
+    # Desa el fitxer temporalment
+    temp_input_file = f"./temp_{file.filename}"
+    with open(temp_input_file, "wb") as temp_file:
+        temp_file.write(await file.read())
+
+    try:
+        # Transcodifica el fitxer
+        output_file_path = transcode_video(temp_input_file, format)
+        return {"message": "Transcodificació completada", "output_file": output_file_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en la transcodificació: {str(e)}")
+    finally:
+        # Elimina el fitxer temporal
+        if os.path.exists(temp_input_file):
+            os.remove(temp_input_file)
+
+
+ENCODING_LADDER = [
+    {"resolution": "1080p", "bitrate": "5000k", "format": "h265"},
+    {"resolution": "720p", "bitrate": "2800k", "format": "h265"},
+    {"resolution": "480p", "bitrate": "1200k", "format": "h265"},
+]
+
+@app.post("/encoding-ladder")
+async def encoding_ladder_endpoint(file: UploadFile = File(...)):
+    # Desa el fitxer d'entrada temporalment
+    temp_input_file = f"./temp_{file.filename}"
+    with open(temp_input_file, "wb") as temp_file:
+        temp_file.write(await file.read())
+
+    output_files = []
+    try:
+        # Genera una versió per cada configuració de l'encoding ladder
+        for step in ENCODING_LADDER:
+            output_file = transcoder(input_path=temp_input_file, format=step["format"], resolution=step["resolution"], bitrate=step["bitrate"])
+            output_files.append(output_file)
+
+        return {
+            "message": "Encoding ladder generat correctament",
+            "output_files": output_files
+        }
+
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Error en l'encoding ladder: {str(error)}")
+
+    finally:
+        # Elimina el fitxer temporal
+        if os.path.exists(temp_input_file):
+            os.remove(temp_input_file)
 
 
 
